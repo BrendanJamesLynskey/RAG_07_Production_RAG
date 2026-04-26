@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG 07 — Production RAG</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-code: #161b22;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent: #76B900;
+            --accent-dim: #76B90044;
+            --accent-glow: #76B90033;
+            --border: #21262d;
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --font-body: 'Inter', sans-serif;
+            --max-width: 900px;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 17px;
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            position: relative;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .hero > * { position: relative; z-index: 1; }
+        .series-label {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+            margin-bottom: 1rem;
+        }
+        .hero h1 .accent { color: var(--accent); }
+        .hero .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 640px;
+            margin-bottom: 2rem;
+        }
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-bottom: 2.5rem;
+        }
+        .tag {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            background: var(--accent-dim);
+            white-space: nowrap;
+        }
+        .pipeline {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            margin-bottom: 1rem;
+            max-width: var(--max-width);
+        }
+        .pipeline-step {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            padding: 0.3rem 0.7rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .pipeline-arrow { color: var(--accent); font-size: 0.9rem; font-weight: 700; }
+        .slide {
+            min-height: 100vh;
+            max-width: var(--max-width);
+            margin: 0 auto;
+            padding: 4rem 1.5rem;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .slide-number {
+            font-family: var(--font-display);
+            font-size: 5rem;
+            font-weight: 700;
+            color: var(--accent-dim);
+            position: absolute;
+            top: 2rem;
+            right: 1.5rem;
+            line-height: 1;
+            user-select: none;
+        }
+        .slide h2 {
+            font-family: var(--font-display);
+            font-size: 1.9rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 1.5rem;
+            line-height: 1.25;
+        }
+        .slide h3 {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .slide p { margin-bottom: 1rem; color: var(--text-secondary); }
+        .slide p strong { color: var(--text-primary); }
+        .slide ul, .slide ol { margin-bottom: 1rem; padding-left: 1.5rem; color: var(--text-secondary); }
+        .slide li { margin-bottom: 0.4rem; }
+        .slide li strong { color: var(--text-primary); }
+        .slide code {
+            font-family: var(--font-mono);
+            font-size: 0.88em;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            padding: 0.05rem 0.35rem;
+            border-radius: 3px;
+            color: #c9d1d9;
+        }
+        .code-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 1.25rem 0;
+            overflow: hidden;
+        }
+        .code-header {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            background: rgba(118, 185, 0, 0.08);
+            padding: 0.4rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .code-block pre { margin: 0; padding: 1rem; overflow-x: auto; }
+        .code-block code {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #c9d1d9;
+            background: transparent;
+            border: none;
+            padding: 0;
+        }
+        .kw { color: #ff7b72; }
+        .fn { color: #d2a8ff; }
+        .str { color: #a5d6ff; }
+        .cm { color: #8b949e; font-style: italic; }
+        .num { color: #79c0ff; }
+        .type { color: #ffa657; }
+        .dir { color: #ff7b72; }
+        .mac { color: #ffa657; }
+        .table-wrap {
+            overflow-x: auto;
+            margin: 1.25rem 0;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-family: var(--font-display);
+            white-space: nowrap;
+        }
+        td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:nth-child(even) td { background: rgba(13, 17, 23, 0.5); }
+        .diagram-flow {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-box {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            text-align: center;
+            white-space: nowrap;
+        }
+        .diagram-box.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-box.dim { color: var(--text-secondary); border-color: var(--border); }
+        .diagram-arrow { color: var(--accent); font-size: 1.3rem; font-weight: 700; }
+        .diagram-vertical {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-vertical .diagram-arrow { font-size: 1.1rem; }
+        .hierarchy {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .hierarchy-level { display: flex; align-items: center; gap: 0.75rem; }
+        .hierarchy-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            min-width: 80px;
+            text-align: right;
+        }
+        .hierarchy-items { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .hierarchy-item {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        .hierarchy-item.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-grid {
+            display: grid;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+        .diagram-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .diagram-panel {
+            padding: 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        .diagram-panel.accent-border { border-left: 3px solid var(--accent); }
+        .diagram-panel h4 {
+            font-family: var(--font-display);
+            font-size: 1rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+        }
+        .diagram-panel p, .diagram-panel ul { font-size: 0.85rem; }
+        .callout {
+            background: var(--bg-card);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 8px 8px 0;
+            padding: 1rem 1.25rem;
+            margin: 1.25rem 0;
+        }
+        .callout p { margin-bottom: 0; }
+        .callout p + p { margin-top: 0.5rem; }
+        .callout .callout-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.3rem;
+        }
+        .contents-list { list-style: none; padding-left: 0; counter-reset: contents; }
+        .contents-list li {
+            counter-increment: contents;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .contents-list li:last-child { border-bottom: none; }
+        .contents-list li::before {
+            content: counter(contents, decimal-leading-zero);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            min-width: 2rem;
+        }
+        .contents-list a { color: var(--text-primary); text-decoration: none; transition: color 0.2s; }
+        .contents-list a:hover { color: var(--accent); }
+        .footer {
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            max-width: var(--max-width);
+            margin: 0 auto;
+        }
+        .footer a { color: var(--accent); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+        .canvas-wrap {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1.25rem 0;
+            overflow-x: auto;
+        }
+        .canvas-wrap canvas, .canvas-wrap svg { display: block; margin: 0 auto; max-width: 100%; }
+        .badge {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            vertical-align: middle;
+            margin-left: 0.3rem;
+        }
+        .badge.ok    { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+        .badge.warn  { border-color: #ffa657; color: #ffa657; background: rgba(255,166,87,0.08); }
+        .badge.bad   { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,0.08); }
+        @media (max-width: 640px) {
+            .slide { padding: 3rem 1rem; min-height: auto; }
+            .slide-number { font-size: 3rem; top: 1.5rem; right: 1rem; }
+            .slide h2 { font-size: 1.5rem; }
+            .diagram-grid.cols-2, .diagram-grid.cols-3 { grid-template-columns: 1fr; }
+            .pipeline { gap: 0.15rem; }
+            .pipeline-step { font-size: 0.6rem; padding: 0.2rem 0.4rem; }
+            .hero h1 { font-size: 1.8rem; }
+            table { font-size: 0.78rem; }
+        }
+    </style>
+</head>
+<body>
+<header class="hero">
+    <div class="series-label">RAG &amp; Retrieval Systems Series &mdash; Presentation 07</div>
+    <h1>Production RAG &mdash; <span class="accent">The Real Work</span></h1>
+    <p class="subtitle">Eval pipelines, drift, freshness, latency, multi-tenancy, citation, cost, and the failure modes you will definitely encounter.</p>
+    <div class="tags">
+        <span class="tag">RAGAS</span>
+        <span class="tag">ARES</span>
+        <span class="tag">Trulens</span>
+        <span class="tag">Multi-Tenancy</span>
+        <span class="tag">Citation</span>
+        <span class="tag">Cost</span>
+        <span class="tag">Failure Modes</span>
+    </div>
+    <div class="pipeline">
+        <span class="pipeline-step">Eval pipeline</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Drift monitor</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Latency budget</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Multi-tenancy</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Citation</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Cost model</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Failure triage</span>
+    </div>
+</header>
+
+<section class="slide" id="slide-00">
+    <div class="slide-number">00</div>
+    <h2>Topics We'll Cover</h2>
+    <ul class="contents-list">
+        <li><a href="#slide-01">Demo to Production &mdash; The Real Work</a></li>
+        <li><a href="#slide-02">Eval Pipelines &mdash; RAGAS, ARES, Trulens, Golden Sets</a></li>
+        <li><a href="#slide-03">Drift &amp; Freshness &mdash; Embedding Migrations, A/B Tests</a></li>
+        <li><a href="#slide-04">Latency Budgets &mdash; Caching, Prefetching, Query Rewriting</a></li>
+        <li><a href="#slide-05">Multi-Tenancy &mdash; Namespaces, ACLs, Secure Retrieval</a></li>
+        <li><a href="#slide-06">Citation &amp; Grounding &mdash; Quoting Sources, Traceability</a></li>
+        <li><a href="#slide-07">Cost &mdash; Embedding Refresh, Vector DB Pricing, Reranker Inference</a></li>
+        <li><a href="#slide-08">Failure Modes &mdash; Empty Results, Low Confidence, Abstention</a></li>
+        <li><a href="#slide-09">What to Take Away</a></li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-01">
+    <div class="slide-number">01</div>
+    <h2>Demo to Production &mdash; The Real Work</h2>
+    <p>A RAG prototype can be built in an afternoon. A production RAG system is a different class of problem: it must be correct, fast, secure, cost-predictable, and observable &mdash; at scale, continuously, over a corpus that drifts.</p>
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>What the demo ignores</h4>
+            <ul>
+                <li>Eval: is the system actually <em>correct</em>?</li>
+                <li>Drift: the corpus ages; the embedding model will be superseded</li>
+                <li>Tenancy: user A must not see user B's documents</li>
+                <li>Cost: at 10 k queries/day, what is the monthly inference + index bill?</li>
+                <li>Failure handling: what happens when retrieval returns nothing?</li>
+                <li>Latency at P99: one slow reranker call makes the SLA miss</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>The production maturity ladder</h4>
+            <p><strong>Level 0:</strong> Works in a notebook. <strong>Level 1:</strong> Deployed with a golden test set showing &gt;80% answer faithfulness. <strong>Level 2:</strong> Continuous eval, alerting on metric drops. <strong>Level 3:</strong> Embedding drift monitoring, A/B testing infra, multi-tenant isolation. <strong>Level 4:</strong> Full cost attribution per tenant, SLA-backed latency, abstention policies.</p>
+        </div>
+    </div>
+    <div class="callout">
+        <div class="callout-label">The most underrated production investment</div>
+        <p>The single highest-leverage investment in a production RAG system is a <strong>labelled evaluation set</strong> of 200&ndash;500 question&ndash;answer pairs drawn from real user queries. Without it, you cannot measure whether a change improved or regressed the system. With it, every infrastructure decision (new embedding model, chunk size change, reranker swap) becomes an empirical measurement rather than a guess.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-02">
+    <div class="slide-number">02</div>
+    <h2>Eval Pipelines &mdash; RAGAS, ARES, Trulens, Golden Sets</h2>
+    <p>RAG evaluation has two separate concerns: <em>retrieval quality</em> (did we find the right documents?) and <em>generation quality</em> (given the documents, did the LLM produce a correct, faithful answer?).</p>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Framework</th><th>Retrieval metrics</th><th>Generation metrics</th><th>LLM-as-judge?</th><th>Notes</th></tr></thead>
+            <tbody>
+                <tr><td><strong>RAGAS v0.2</strong></td><td>Context Recall, Context Precision</td><td>Faithfulness, Answer Relevancy, Answer Correctness</td><td>Yes (configurable LLM)</td><td>Most widely adopted; pip install ragas; Works with LangChain + LlamaIndex</td></tr>
+                <tr><td><strong>ARES</strong></td><td>Context Relevance</td><td>Answer Faithfulness, Answer Relevance</td><td>Yes (fine-tuned DeBERTa judges)</td><td>Trains small judges on your domain; less LLM API cost at scale</td></tr>
+                <tr><td><strong>Trulens Eval</strong></td><td>Context Relevance</td><td>Groundedness, Answer Relevance</td><td>Yes</td><td>Real-time eval via instrumentation; Streamlit dashboard; works with any framework</td></tr>
+                <tr><td><strong>Golden set</strong></td><td>Recall@k, MRR@k, NDCG@k</td><td>Exact match, F1, human rating</td><td>Optional (LLM scoring)</td><td>Ground-truth labels; most reliable; requires upfront annotation effort</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="code-block">
+        <div class="code-header">RAGAS evaluation (v0.2) &mdash; minimal setup</div>
+<pre><code><span class="kw">from</span> ragas <span class="kw">import</span> evaluate
+<span class="kw">from</span> ragas.metrics <span class="kw">import</span> faithfulness, answer_relevancy, context_recall
+<span class="kw">from</span> datasets <span class="kw">import</span> Dataset
+
+eval_data = {
+    <span class="str">"question"</span>:         [<span class="str">"What is HNSW?"</span>, ...],
+    <span class="str">"contexts"</span>:         [[<span class="str">"HNSW is a graph-based ANN..."</span>], ...],
+    <span class="str">"answer"</span>:           [<span class="str">"HNSW stands for Hierarchical..."</span>, ...],
+    <span class="str">"ground_truth"</span>:     [<span class="str">"Hierarchical Navigable Small World..."</span>, ...],
+}
+
+result = <span class="fn">evaluate</span>(
+    dataset=Dataset.<span class="fn">from_dict</span>(eval_data),
+    metrics=[faithfulness, answer_relevancy, context_recall],
+)
+<span class="cm"># result.to_pandas() for detailed per-question breakdown</span></code></pre>
+    </div>
+</section>
+
+<section class="slide" id="slide-03">
+    <div class="slide-number">03</div>
+    <h2>Drift &amp; Freshness &mdash; Embedding Migrations, A/B Tests</h2>
+    <p>RAG systems degrade over time from two distinct sources: <strong>corpus drift</strong> (the world changes; indexed documents become stale) and <strong>model drift</strong> (a better embedding model is available but the index still uses the old one).</p>
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Corpus freshness</h4>
+            <p>Monitor <code>doc_modified_at</code> vs <code>ingested_at</code> lag. Alert when &gt;5% of the corpus is stale by more than N days. Use change-data-capture (CDC) from the source system (Postgres WAL, S3 event notifications, Kafka) to trigger incremental re-ingestion. Freshness is not free: every re-ingested document costs one embedding call.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Embedding model migration</h4>
+            <p><strong>Never</strong> mix embeddings from two different models in the same index. Old and new model vectors live in different metric spaces; cosine similarity across them is meaningless. Migration plan: build a shadow index with the new model; run A/B traffic; cut over atomically via collection alias swap. Shadow index build time at 100 k docs / 768 dims / BGE-base: ~20 min on A10G.</p>
+        </div>
+    </div>
+    <div class="callout">
+        <div class="callout-label">A/B testing RAG changes safely</div>
+        <p>A/B test any significant change (new embedding model, new chunk size, new reranker) before full rollout. Serve variant A to 90% of traffic, variant B to 10%. Measure: RAGAS Faithfulness, Answer Relevancy, Recall@10, user thumbs up/down rate, query latency P50/P99. Run for 72 hours minimum to account for daily query distribution variation. Use a hash of the user ID or session ID for stable assignment &mdash; never random per request or you'll show the same user both variants for the same query.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-04">
+    <div class="slide-number">04</div>
+    <h2>Latency Budgets &mdash; Caching, Prefetching, Query Rewriting</h2>
+    <p>RAG latency is dominated by two serial operations that cannot easily be parallelised: embedding the query and LLM generation. Everything else can be optimised to negligible cost.</p>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Optimisation</th><th>Latency saving</th><th>Implementation</th><th>Caveat</th></tr></thead>
+            <tbody>
+                <tr><td><strong>Semantic query cache</strong></td><td>90&ndash;100% on cache hit (skip retrieval + LLM)</td><td>Redis + vector similarity cache: store (query_embedding, response). Cache hit if cosine &gt; 0.97. GPTCache library.</td><td>Stale responses; invalidation when corpus changes</td></tr>
+                <tr><td><strong>Embedding cache</strong></td><td>5&ndash;10 ms per query</td><td>Cache query embeddings keyed by normalised query string (lowercase, strip punctuation). Redis STRING, TTL 1 h.</td><td>Near-duplicate queries may bypass cache</td></tr>
+                <tr><td><strong>Reranker candidate reduction</strong></td><td>40&ndash;60% of reranker cost</td><td>Reduce from k=100 to k=50 first-stage candidates. Measure Recall@50 vs Recall@100 on your eval set; accept the recall trade-off.</td><td>Recall ceiling drops</td></tr>
+                <tr><td><strong>Async retrieval prefetch</strong></td><td>50&ndash;100 ms</td><td>Prefetch retrievals for in-flight conversation turns. Predict likely next query from context; run retrieval before user submits.</td><td>Wasted compute on mispredictions</td></tr>
+                <tr><td><strong>Query rewriting</strong></td><td>Improves quality, not speed</td><td>Expand abbreviations, correct typos, add domain terminology before embedding. Cheaper than HyDE but less effective.</td><td>LLM call adds 200 ms if not cached</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="slide" id="slide-05">
+    <div class="slide-number">05</div>
+    <h2>Multi-Tenancy &mdash; Namespaces, ACLs, Secure Retrieval</h2>
+    <p>Multi-tenant RAG is a security-critical design. A tenant isolation failure allows one customer to retrieve another customer's documents &mdash; a data breach.</p>
+    <div class="diagram-grid cols-3">
+        <div class="diagram-panel accent-border">
+            <h4>Namespace isolation</h4>
+            <p>One vector DB collection per tenant. Complete data isolation; no cross-contamination possible. Simplest to implement and audit. Cost: collection-level overhead multiplied by N tenants. Suitable for &lt;1000 tenants. Pinecone namespaces, Qdrant collections, Weaviate classes, pgvector schemas all support this model.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Shared collection + payload filter</h4>
+            <p>All tenants in one collection. Every vector carries a <code>tenant_id</code> payload field. Every query includes a mandatory filter. More efficient but requires that the filter is <em>always</em> applied &mdash; one missing filter = cross-tenant leak. Enforce at the retrieval service layer, not the application layer. Qdrant's payload indexes make this efficient.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>ACL-based fine-grained access</h4>
+            <p>Each document has an ACL list of user/group IDs. At query time, filter to documents where the user's ID or group appears in the ACL. Enables row-level security across tenants and roles. Implementation: store ACL as a JSON array payload field; Qdrant supports array-contains filters. For &gt;1 M documents per tenant with complex ACLs, consider a dedicated access control service.</p>
+        </div>
+    </div>
+    <div class="callout">
+        <div class="callout-label">The injection attack surface</div>
+        <p>Multi-tenant RAG must guard against <strong>prompt injection via retrieved documents</strong>: a malicious document in tenant A's corpus could contain instructions that leak tenant B's context if A and B share an LLM session. Mitigate with: (1) strict namespace isolation at the retrieval layer, (2) sanitise retrieved text before inserting into the LLM prompt, (3) instruct the model with a system prompt that forbids acting on instructions found in retrieved context. This is an active research area &mdash; no complete solution exists yet.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-06">
+    <div class="slide-number">06</div>
+    <h2>Citation &amp; Grounding &mdash; Quoting Sources, Traceability</h2>
+    <p>Enterprise RAG users require answers to be grounded in sources &mdash; both for trust and for auditability in regulated industries (legal, medical, financial). Citation is not a cosmetic feature; it is the mechanism by which users verify correctness.</p>
+    <div class="code-block">
+        <div class="code-header">Citation prompt pattern (Claude/OpenAI)</div>
+<pre><code><span class="cm"># System prompt</span>
+system = <span class="str">"""
+You are a precise research assistant. Answer only from the provided context.
+For each claim, include an inline citation [1], [2] referencing the source chunk.
+If the context does not contain the answer, say "I don't have enough information."
+Never invent sources or cite documents not in the context.
+"""</span>
+
+<span class="cm"># Context block (each retrieved chunk labelled)</span>
+context = <span class="fn">"\n\n"</span>.<span class="fn">join</span>([
+    <span class="fn">f</span><span class="str">"[{i+1}] (Source: {c['source']}, p.{c['page']})\n{c['content']}"</span>
+    <span class="kw">for</span> i, c <span class="kw">in</span> <span class="fn">enumerate</span>(retrieved_chunks)
+])
+
+<span class="cm"># User message includes context + question</span>
+user = <span class="fn">f</span><span class="str">"Context:\n{context}\n\nQuestion: {query}"</span></code></pre>
+    </div>
+    <div class="callout">
+        <div class="callout-label">Faithfulness vs hallucination detection</div>
+        <p><strong>RAGAS Faithfulness</strong> checks whether each sentence in the generated answer is entailed by at least one retrieved chunk. Score = (faithfully-grounded sentences) / (total sentences). A score below 0.85 indicates the model is extrapolating beyond its retrieved context. Use Trulens' real-time groundedness check as a guardrail: if faithfulness drops below threshold, append a disclaimer to the response or escalate to a human reviewer. Never surface answers with faithfulness &lt; 0.7 without explicit user warning.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-07">
+    <div class="slide-number">07</div>
+    <h2>Cost &mdash; Embedding Refresh, Vector DB Pricing, Reranker Inference</h2>
+    <p>Cost modelling is essential before committing to infrastructure choices. The largest RAG cost drivers are often not the LLM generation but the embedding and vector DB layers.</p>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Cost component</th><th>Unit</th><th>Typical rate (2025)</th><th>Example: 1M docs, 10k q/day</th></tr></thead>
+            <tbody>
+                <tr><td>Embedding (index-time)</td><td>per Mtok input</td><td>$0.02 (text-embedding-3-small) / $0.13 (large)</td><td>1-time: ~$10&ndash;65 for 500-token avg chunks</td></tr>
+                <tr><td>Embedding (query-time)</td><td>per Mtok input</td><td>$0.02&ndash;0.13</td><td>&lt;$1/day (queries are short, ~30 tokens)</td></tr>
+                <tr><td>Cohere Rerank API</td><td>per 1k (query, chunk) pairs</td><td>$0.002</td><td>$20/day at k=100, 10k queries</td></tr>
+                <tr><td>Qdrant Cloud</td><td>per GB RAM per hour</td><td>~$0.03/GB/h (1 M &times; 1024d &asymp; 4 GB)</td><td>~$90/month</td></tr>
+                <tr><td>Pinecone Serverless</td><td>per read unit / write unit</td><td>$0.00000025/RU (query &asymp; 10 RU)</td><td>~$25/month query cost</td></tr>
+                <tr><td>LLM generation</td><td>per Mtok (input+output)</td><td>$0.15 (GPT-4o-mini) / $3 (Claude Sonnet)</td><td>$6&ndash;120/day (5 chunks &times; 500tok context)</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="callout">
+        <div class="callout-label">The dominant cost is almost always LLM generation</div>
+        <p>For a 10 k query/day system at 5 retrieved chunks &times; 500 tokens each, the input context alone is 25 M tokens/day. At GPT-4o-mini prices ($0.15/Mtok), that is $3.75/day. At Claude Sonnet ($3/Mtok): $75/day. The reranker and embedding costs are a rounding error by comparison. Reduce LLM cost first: use contextual compression to extract only the relevant sentences from each chunk before inserting into context (LangChain <code>LLMChainExtractor</code>). A 50% context reduction at the same answer quality halves your LLM bill.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-08">
+    <div class="slide-number">08</div>
+    <h2>Failure Modes &mdash; Empty Results, Low Confidence, Abstention</h2>
+    <p>A production RAG system must handle retrieval failures gracefully. Silently returning hallucinated answers is worse than explicit abstention.</p>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Failure mode</th><th>Symptom</th><th>Detection</th><th>Mitigation</th></tr></thead>
+            <tbody>
+                <tr><td><strong>Empty retrieval</strong></td><td>Top-k returns 0 results or all below relevance threshold</td><td>Check result count + min score before calling LLM</td><td>Widen search (lower threshold, increase k); fall back to web search; explicit &ldquo;I don't know&rdquo;</td></tr>
+                <tr><td><strong>Stale corpus answer</strong></td><td>LLM answers confidently from outdated doc</td><td>Check <code>doc_modified_at</code> of retrieved chunks; alert if &gt;N days old</td><td>CRAG web-search fallback; prepend staleness warning to context; filter by recency in retrieval</td></tr>
+                <tr><td><strong>Hallucination</strong></td><td>Model generates claims not in retrieved context</td><td>RAGAS Faithfulness &lt; threshold; Trulens groundedness check</td><td>Stronger system prompt; lower temperature; abstention guardrail</td></tr>
+                <tr><td><strong>Cross-tenant data leak</strong></td><td>User sees another tenant's document content</td><td>Audit log of retrieved doc IDs vs requesting user's ACL</td><td>Mandatory payload filter; namespace isolation; post-retrieval ACL check</td></tr>
+                <tr><td><strong>Index degradation (HNSW stale)</strong></td><td>Recall drops 5&ndash;15% silently after many deletes</td><td>Recall@10 on fixed eval set run nightly</td><td>Trigger compaction when tombstone fraction &gt; 20%</td></tr>
+                <tr><td><strong>Embedding model mismatch</strong></td><td>Cosine scores all &lt; 0.2; retrieval nonsensical</td><td>Log score distributions; alert on P50 cosine drop</td><td>Validate model version matches index at startup; block mixed-model upserts</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="callout">
+        <div class="callout-label">Abstention as a first-class feature</div>
+        <p>Design explicit abstention into the system. If context relevance is below 0.5 (RAGAS), return: <em>"I couldn't find reliable information in the knowledge base for this question. Please consult [source] or contact [team]."</em> This is not a failure &mdash; it is correct behaviour that prevents low-quality hallucinated answers from eroding user trust. Track abstention rate as a metric; a sudden spike indicates corpus freshness or retrieval pipeline issues.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-09">
+    <div class="slide-number">09</div>
+    <h2>What to Take Away</h2>
+    <ul>
+        <li><strong>Build a labelled evaluation set first.</strong> 200&ndash;500 question&ndash;answer pairs from real users. Everything else depends on it.</li>
+        <li><strong>RAGAS is the standard eval framework.</strong> Faithfulness, Answer Relevancy, and Context Recall are the three metrics every production RAG system must track continuously.</li>
+        <li><strong>Never mix embedding models in a single index.</strong> Use shadow index + alias swap for zero-downtime embedding migrations.</li>
+        <li><strong>Multi-tenancy requires either namespace isolation or mandatory payload filters.</strong> There is no safe middle ground. Enforce at the retrieval service layer.</li>
+        <li><strong>Citation and groundedness are enterprise requirements,</strong> not optional polish. RAGAS Faithfulness &lt; 0.7 requires an explicit user warning or abstention.</li>
+        <li><strong>LLM generation dominates cost.</strong> Contextual compression (extracting only relevant sentences) is the highest-leverage cost optimisation. The embedding and reranker costs are secondary.</li>
+        <li><strong>Build abstention into the system.</strong> Monitor context relevance; return explicit "I don't know" rather than confident hallucination when retrieval quality is low.</li>
+        <li><strong>A/B test every significant change</strong> (chunk size, embedding model, reranker) against your labelled eval set before full rollout.</li>
+    </ul>
+    <div class="callout">
+        <div class="callout-label">Series complete</div>
+        <p>You've completed the RAG &amp; Retrieval Systems series. The seven decks cover the full stack from embedding models and vector databases through hybrid search, chunking, agentic patterns, graph augmentation, and production operations. Return to the <a href="https://github.com/BrendanJamesLynskey/LLM_Hub_RAG_Retrieval">RAG &amp; Retrieval Systems sub-hub</a> for further reading and related resources.</p>
+    </div>
+</section>
+
+<footer class="footer">
+    <p>Part of the <a href="https://github.com/BrendanJamesLynskey/LLM_Hub_RAG_Retrieval">RAG &amp; Retrieval Systems Series</a></p>
+    <p style="margin-top:0.5rem;font-size:0.8rem;"><a href="https://github.com/BrendanJamesLynskey/LLM_Hub_RAG_Retrieval">Back to Series Index</a></p>
+</footer>
+<script>
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.style.opacity = '1';
+                entry.target.style.transform = 'translateY(0)';
+            }
+        });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.slide').forEach(slide => {
+        slide.style.opacity = '0';
+        slide.style.transform = 'translateY(30px)';
+        slide.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+        observer.observe(slide);
+    });
+</script>
+</body>
+</html>
